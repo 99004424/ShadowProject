@@ -19,6 +19,9 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include <stdint.h>
+#define 	MAX_CONFIG_PARAM		5
+#define 	EEPROM_ADDR				0xA0
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -53,6 +56,15 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
+
+void UART_Receive_Frame(void);
+void I2C_Transmit_DefaultParameters(void);
+void I2C_ChangeParameter_Values(void);
+void Check_EEPROM_Data_integrity(void);
+
+
+float config_parameters[MAX_CONFIG_PARAM]={0.4,2,1.5,0.4,1.5};
+
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
