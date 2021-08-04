@@ -20,6 +20,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include <stdint.h>
+#include <string.h>
 #define 	MAX_CONFIG_PARAM		5
 #define 	EEPROM_ADDR				0xA0
 
@@ -63,7 +64,34 @@ void I2C_ChangeParameter_Values(void);
 void Check_EEPROM_Data_integrity(void);
 
 
-float config_parameters[MAX_CONFIG_PARAM]={0.4,2,1.5,0.4,1.5};
+float default_config_parameters[MAX_CONFIG_PARAM]={0.4,2,1.5,0.4,1.5};
+float uart_config_param_buf[MAX_CONFIG_PARAM];
+uint8_t config_param_data[4];
+int no_of_uart_bytes_rx=0;
+int uart_flag=0;
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
+		if(uart_flag==0){
+			HAL_UART_Receive_IT(&huart2, config_param_data, 4);
+			no_of_uart_bytes_rx++;
+			if(no_of_uart_bytes_rx==4 && config_param_data[0]=='('){
+				uart_flag=1;
+			}
+		}
+		else{
+			HAL_UART_Receive_IT(&huart2, uart_config_param_buf,config_param_data[1]);
+		}
+}
+HAL_StatusTypeDef i2cRetVal;
+uint8_t buf[12];
+int16_t val;
+void I2C_Transmit_DefaultParameters(void){
+	buf[0]=0x00;
+	i2cRetVal=HAL_I2C_Master_Transmit(&hi2c, EEPROM_ADDR, buf, 1, HAL_MAX_DELAY);
+	if(ret!=HAL_OK){
+		strcpy((char*)buf,"Error Tx\r\n");
+	}
+}
 
 /* USER CODE BEGIN PFP */
 
