@@ -21,6 +21,8 @@
 #include "main.h"
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 #define 	MAX_CONFIG_PARAM		5
 #define 	EEPROM_ADDR				0xA0
 
@@ -66,8 +68,10 @@ void Check_EEPROM_Data_integrity(void);
 
 float default_config_parameters[MAX_CONFIG_PARAM]={0.4,2,1.5,0.4,1.5};
 float uart_config_param_buf[MAX_CONFIG_PARAM];
+char tmp_config_buf[100]={'*'};
 uint8_t config_param_data[4];
 int no_of_uart_bytes_rx=0;
+int no_of_parameters_rx=0;
 int uart_flag=0;
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
@@ -79,7 +83,16 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
 			}
 		}
 		else{
-			HAL_UART_Receive_IT(&huart2, uart_config_param_buf,config_param_data[1]);
+			int no_of_param=config_param_data[1];
+			//tmp_config_buf 31.38 43.44 123.65 65.33
+			HAL_UART_Receive_IT(&huart2, (unsigned char*)tmp_config_buf,no_of_param*5);
+			char* pend;
+			for(int i=0;i<no_of_param;i++){
+					if(i<no_of_param-2)
+					uart_config_param_buf[i] = strtof(tmp_config_buf, &pend);
+					else
+					uart_config_param_buf[i]= strtof(pend, NULL);
+			}
 		}
 }
 HAL_StatusTypeDef i2cRetVal;
@@ -87,8 +100,8 @@ uint8_t buf[12];
 int16_t val;
 void I2C_Transmit_DefaultParameters(void){
 	buf[0]=0x00;
-	i2cRetVal=HAL_I2C_Master_Transmit(&hi2c, EEPROM_ADDR, buf, 1, HAL_MAX_DELAY);
-	if(ret!=HAL_OK){
+	i2cRetVal=HAL_I2C_Master_Transmit(&hi2c1, EEPROM_ADDR, buf, 1, HAL_MAX_DELAY);
+	if(i2cRetVal!=HAL_OK){
 		strcpy((char*)buf,"Error Tx\r\n");
 	}
 }
