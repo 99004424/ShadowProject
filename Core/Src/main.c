@@ -61,49 +61,47 @@ static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
 
 void UART_Receive_Frame(void);
-void I2C_Transmit_DefaultParameters(void);
+uint8_t I2C_Transmit_DefaultParameters(void);
 void I2C_ChangeParameter_Values(void);
 void Check_EEPROM_Data_integrity(void);
+void getfloatBytes();
 
-
+///////DEFAULT PARAMETER VALUES//////
 float default_config_parameters[MAX_CONFIG_PARAM]={0.4,2,1.5,0.4,1.5};
-float uart_config_param_buf[MAX_CONFIG_PARAM];
-char tmp_config_buf[100]={'*'};
+
+/////DATA BUFFERS///////
 uint8_t config_param_data[4];
-int no_of_uart_bytes_rx=0;
-int no_of_parameters_rx=0;
-int uart_flag=0;
+uint8_t uart_config_param_buf[100]={'*'};
+uint8_t default_config_parameters_bytearray[MAX_CONFIG_PARAM*4];
+
+
+///////FLAGS//////
+uint8_t uart_param_flag=0;
+uint8_t UART_FLAG=0;
+uint8_t I2C_FLAG=0;
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
-		if(uart_flag==0){
-			HAL_UART_Receive_IT(&huart2, config_param_data, 4);
-			no_of_uart_bytes_rx++;
-			if(no_of_uart_bytes_rx==4 && config_param_data[0]=='('){
-				uart_flag=1;
-			}
+		UART_FLAG=0;
+		I2C_FLAG=0;
+		if(uart_param_flag==1){
+			  HAL_UART_Receive_IT(&huart2, config_param_data, 4);
 		}
 		else{
 			int no_of_param=config_param_data[1];
-			//tmp_config_buf 31.38 43.44 123.65 65.33
-			HAL_UART_Receive_IT(&huart2, (unsigned char*)tmp_config_buf,no_of_param*5);
-			char* pend;
-			for(int i=0;i<no_of_param;i++){
-					if(i<no_of_param-2)
-					uart_config_param_buf[i] = strtof(tmp_config_buf, &pend);
-					else
-					uart_config_param_buf[i]= strtof(pend, NULL);
-			}
+			HAL_UART_Receive_IT(&huart2,uart_config_param_buf,no_of_param*4+1);
+			uart_param_flag=1;
 		}
 }
-HAL_StatusTypeDef i2cRetVal;
-uint8_t buf[12];
-int16_t val;
-void I2C_Transmit_DefaultParameters(void){
-	buf[0]=0x00;
-	i2cRetVal=HAL_I2C_Master_Transmit(&hi2c1, EEPROM_ADDR, buf, 1, HAL_MAX_DELAY);
-	if(i2cRetVal!=HAL_OK){
-		strcpy((char*)buf,"Error Tx\r\n");
+uint8_t I2C_Transmit_DefaultParameters(void){
+	HAL_StatusTypeDef i2cRetVal;
+	for(int i=0;i<MAX_CONFIG_PARAM;i++){
+		memcpy(default_config_parameters_bytearray,(uint8_t *)&default_config_parameters[i],4);
 	}
+	i2cRetVal=HAL_I2C_Master_Transmit(&hi2c1, EEPROM_ADDR, default_config_parameters_bytearray,MAX_CONFIG_PARAM*4, HAL_MAX_DELAY);
+	if(i2cRetVal!=HAL_OK){
+		return 0;
+	}
+	return 1;
 }
 
 /* USER CODE BEGIN PFP */
@@ -121,6 +119,7 @@ void I2C_Transmit_DefaultParameters(void){
   */
 int main(void)
 {
+
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -146,17 +145,31 @@ int main(void)
   MX_USART2_UART_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_UART_Receive_IT(&huart2, config_param_data, 4);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if(config_param_data[0]=='(' && uart_config_param_buf[config_param_data[1]*4]==')'){
+		  UART_FLAG=1;
+		  HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Data Received",sizeof("Data Received"));
+	  }
+	  if(I2C_FLAG==0 && UART_FLAG==1){
+		  if(I2C_Transmit_DefaultParameters()){
+			  I2C_FLAG=1;
+			  HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Tx Successful",sizeof("Tx Successful"));
+		  }
+		  else{
+
+		  }
+	  }
+
+	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
   /* USER CODE END 3 */
 }
 
