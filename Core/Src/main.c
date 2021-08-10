@@ -79,13 +79,21 @@ uint8_t default_config_parameters_bytearray[MAX_CONFIG_PARAM*4];
 
 ///////FLAGS//////
 uint8_t uart_param_flag=0;
-uint8_t UART_FLAG=0;
-uint8_t I2C_FLAG=0;
+uint8_t UART_SX_FLAG=0;
+uint8_t I2C_TX_FLAG=1;
+uint8_t UART_TX_FLAG=0;
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
-    UART_FLAG=0;
-    I2C_FLAG=0;
+	UART_SX_FLAG=0;
+    I2C_TX_FLAG=1;
+
     if(uart_param_flag==1){
+        if(config_param_data[0]=='(' && uart_config_param_buf[config_param_data[1]*4]==')'){
+        	UART_SX_FLAG=1;
+        	UART_TX_FLAG=1;
+        	HAL_UART_TxCpltCallback(&huart2);
+        	UART_TX_FLAG=0;
+        }
         HAL_UART_Receive_IT(&huart2, config_param_data, 4);
         uart_param_flag=0;
     }
@@ -94,6 +102,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
       HAL_UART_Receive_IT(&huart2,uart_config_param_buf,no_of_param*4+1);
       uart_param_flag=1;
     }
+}
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
+	if(UART_TX_FLAG==1)
+	HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Data Received",sizeof("Data Received"));
+
 }
 uint8_t I2C_Transmit_DefaultParameters(void){
   HAL_StatusTypeDef i2cRetVal;
@@ -141,25 +154,23 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_UART_Receive_IT(&huart2, config_param_data, 4);
   /* USER CODE END 2 */
+  HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Connection Established",sizeof("Connection Established"));
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
     /* USER CODE END WHILE */
-	  if(config_param_data[0]=='(' && uart_config_param_buf[config_param_data[1]*4]==')'){
-	  		  UART_FLAG=1;
-	  		  HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Data Received",sizeof("Data Received"));
-	  	  }
-	  	  if(I2C_FLAG==0 && UART_FLAG==1){
-	  		  if(I2C_Transmit_DefaultParameters()){
-	  			  I2C_FLAG=1;
-	  			  HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Tx Successful",sizeof("Tx Successful"));
-	  		  }
-	  		  else{
 
-	  		  }
-	  	  }
+    if(I2C_TX_FLAG==1 && UART_SX_FLAG==1){
+      if(I2C_Transmit_DefaultParameters()){
+          I2C_TX_FLAG=0;
+            HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Tx Successful",sizeof("Tx Successful"));
+      }
+      else{
+
+      }
+    }
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
