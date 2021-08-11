@@ -19,12 +19,13 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "crc.h"
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #define   MAX_CONFIG_PARAM    5
-#define   EEPROM_ADDR       0xA0
+#define   EEPROM_ADDR         0xA0
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -61,9 +62,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 uint8_t I2C_Transmit_DefaultParameters(void);
-void I2C_ChangeParameter_Values(void);
-void Check_EEPROM_Data_integrity(void);
-void getfloatBytes();
+uint8_t I2C_Transmit_NewParameters(uint8_t bytearray[],uint8_t arraysize);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -94,6 +93,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
         	HAL_UART_TxCpltCallback(&huart2);
         	UART_TX_FLAG=0;
         }
+        else{
+        	UART_TX_FLAG=2;
+        	HAL_UART_TxCpltCallback(&huart2);
+        	UART_TX_FLAG=0;
+        }
         HAL_UART_Receive_IT(&huart2, config_param_data, 4);
         uart_param_flag=0;
     }
@@ -104,20 +108,35 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
     }
 }
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
-	if(UART_TX_FLAG==1)
-	HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Data Received",sizeof("Data Received"));
-
+	if(UART_TX_FLAG==1){
+		HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Data Received",sizeof("Data Received"));
+	}
+	else if(UART_TX_FLAG==2){
+	HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Invalid Frame",sizeof("Invalid Frame"));
+	}
 }
 uint8_t I2C_Transmit_DefaultParameters(void){
   HAL_StatusTypeDef i2cRetVal;
-  for(int i=0;i<MAX_CONFIG_PARAM;i++){
-    memcpy(default_config_parameters_bytearray,(uint8_t *)&default_config_parameters[i],4);
-  }
-  i2cRetVal=HAL_I2C_Master_Transmit(&hi2c1, EEPROM_ADDR, default_config_parameters_bytearray,MAX_CONFIG_PARAM*4, HAL_MAX_DELAY);
+  i2cRetVal=HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<6), 2, (uint8_t*)&default_config_parameters, 32, 10000);
+  HAL_Delay(5);
+  //uint8_t mytest[10]={1,2,3,4,5,6,7,8,9,9};
+  //i2cRetVal=HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<6), 2, mytest, 32, 10000);
+    //HAL_Delay(5);
   if(i2cRetVal!=HAL_OK){
-    return 0;
+	  return 0;
   }
-  return 1;
+  else
+	  return 1;
+}
+uint8_t I2C_Transmit_NewParameters(uint8_t bytearray[],uint8_t arraysize){
+	HAL_StatusTypeDef i2cRetVal;
+	  i2cRetVal=HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<6), 2, bytearray, arraysize, 10000);
+	  HAL_Delay(5);
+	  if(i2cRetVal!=HAL_OK){
+		  return 0;
+	  }
+	  else
+		  return 1;
 }
 /* USER CODE END 0 */
 
@@ -152,27 +171,23 @@ int main(void)
   MX_USART2_UART_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
-  HAL_UART_Receive_IT(&huart2, config_param_data, 4);
   /* USER CODE END 2 */
-  HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Connection Established",sizeof("Connection Established"));
+  //HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Connection Established",sizeof("Connection Established"));
+  uint8_t dataread[32]={0};
+  if(I2C_Transmit_DefaultParameters()){
+	  HAL_UART_Transmit(&huart2,(uint8_t* )"Write Successful",sizeof("Write Successful"),1000);
+  }
+  HAL_I2C_Mem_Read(&hi2c1, 0xA0, (1<<6), 2, dataread, 32, 10000);
+  HAL_UART_Receive_IT(&huart2, config_param_data, 4);
+  //uint8_t testing=I2C_Transmit_DefaultParameters();
+  //HAL_UART_Transmit(&huart2,&testing,1,10000);
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    /* USER CODE END WHILE */
-
-    if(I2C_TX_FLAG==1 && UART_SX_FLAG==1){
-      if(I2C_Transmit_DefaultParameters()){
-          I2C_TX_FLAG=0;
-            HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Tx Successful",sizeof("Tx Successful"));
-      }
-      else{
-
-      }
-    }
-    /* USER CODE BEGIN 3 */
+  while (1){
   }
+    /* USER CODE END WHILE */
+    /* USER CODE BEGIN 3 */
   /* USER CODE END 3 */
 }
 
