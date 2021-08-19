@@ -70,7 +70,7 @@ uint8_t I2C_Transmit_NewParameters(uint8_t bytearray[],uint8_t arraysize,uint8_t
 /* USER CODE BEGIN 0 */
 ///////DEFAULT PARAMETER VALUES//////
 float default_config_parameters[MAX_CONFIG_PARAM]={0.4,2,1.5,0.4,1.5};
-
+uint8_t default_cdefault_config_parameters_bytearray[MAX_CONFIG_BYTES];
 /////DATA BUFFERS///////
 uint8_t config_param_data[4];
 uint8_t uart_config_param_buf[100]={'*'};
@@ -136,48 +136,40 @@ uint8_t I2C_Transmit_DefaultParameters(void){
   crcInit();
   crc config_crc=crcFast((uint8_t*)&default_config_parameters,MAX_CONFIG_BYTES);
   HAL_StatusTypeDef i2cRetVal;
-  uint8_t writeFlag=0xAA;
-  uint8_t i2C_default_write=0;
-  //write first byte in EEPROM as 0xAA
-  i2cRetVal=HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<6), 1, &writeFlag, 1, 1000);
-  HAL_Delay(5);
-  if(i2cRetVal==HAL_OK){
-	  i2C_default_write|=1<<0;
+  uint8_t senddatabuf[32]={0};
+  uint8_t crcbuf[2]={0};
+  memcpy(crcbuf, (uint8_t*)&config_crc, MAX_CONFIG_BYTES);
+  memcpy(default_cdefault_config_parameters_bytearray, (uint8_t*)&default_config_parameters, MAX_CONFIG_BYTES);
+  senddatabuf[0]=0xAA;
+  for(int i=1;i<MAX_CONFIG_BYTES;i++){
+	  senddatabuf[i]=default_cdefault_config_parameters_bytearray[i-1];
   }
-  //Write default config parameters
-  i2cRetVal=HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<6)+1, 1, (uint8_t*)&default_config_parameters, MAX_CONFIG_BYTES, 1000);
+  for(int i=0;i<2;i++){
+ 	  senddatabuf[MAX_CONFIG_BYTES+1]=crcbuf[i];
+   }
+  i2cRetVal=HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<5), 2, senddatabuf,32, 1000);
   HAL_Delay(5);
   if(i2cRetVal==HAL_OK){
-  	  i2C_default_write|=1<<1;
-    }
-  //Write CRC of data to EEPROM
-  i2cRetVal=HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<6)+1+MAX_CONFIG_BYTES, 1, (uint8_t*)&config_crc,2, 1000);
-  HAL_Delay(5);
-  if(i2cRetVal==HAL_OK){
-  	  i2C_default_write|=1<<2;
-  }
-  //check if all the writes to EEPROM were successful
-  if(i2C_default_write==7){
 	  return 1;
   }
   else
 	  return 0;
 }
-uint8_t I2C_Transmit_NewParameters(uint8_t bytearray[],uint8_t arraysize,uint8_t offset){
+uint8_t I2C_Transmit_NewParameters(uint8_t bytearray[],uint8_t arraysize,uint8_t start_address){
 	HAL_StatusTypeDef i2cRetVal;
 	uint8_t i2C_new_write=0;
-	  i2cRetVal=HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<6)+offset+1, 2, bytearray, arraysize, 1000);
+	  i2cRetVal=HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<5)|start_address|1, 2, bytearray, arraysize, 1000);
 	  HAL_Delay(5);
 	  if(i2cRetVal==HAL_OK){
 		  i2C_new_write|=1<<0;
 	  }
 	  uint8_t tempbuf[MAX_CONFIG_BYTES];
-	  HAL_I2C_Mem_Read(&hi2c1, 0xA0, (1<<6)+1, 2, tempbuf,MAX_CONFIG_BYTES, 1000);
+	  HAL_I2C_Mem_Read(&hi2c1, 0xA0, (1<<5)|1, 2, tempbuf,MAX_CONFIG_BYTES, 1000);
 	  //recalculate CRC based on new parameters written
 	  crcInit();
-	  crc new_config_crc=crcSlow((uint8_t*)&tempbuf,MAX_CONFIG_BYTES);
+	  crc new_config_crc=crcFast((uint8_t*)&tempbuf,MAX_CONFIG_BYTES);
 	  //Write updated CRC of data to EEPROM
-	  i2cRetVal=HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<6)+1+MAX_CONFIG_BYTES, 1, (uint8_t*)&new_config_crc,2, 1000);
+	  i2cRetVal=HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<5)|1|MAX_CONFIG_BYTES, 1, (uint8_t*)&new_config_crc,2, 1000);
 	  HAL_Delay(5);
 	  if(i2cRetVal==HAL_OK){
 		  i2C_new_write|=1<<1;
@@ -222,11 +214,12 @@ int main(void)
   MX_USART2_UART_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
+
   /* USER CODE END 2 */
   uint8_t writeflag=0;
 
   //Read first memory location to check if default parameters already written
-  HAL_I2C_Mem_Read(&hi2c1, 0xA0, (1<<6), 2, &writeflag, 1, 1000);
+  HAL_I2C_Mem_Read(&hi2c1, 0xA0, (1<<5), 2, &writeflag, 1, 1000);
   if(writeflag!=0xAA){
 	  //Write Default parameters
 	  uint8_t I2C_Returnflag=I2C_Transmit_DefaultParameters();
@@ -237,6 +230,8 @@ int main(void)
 		  HAL_UART_Transmit(&huart2,(uint8_t* )"Write Failed",sizeof("Write Failed"),1000);
 	  }
   }
+  uint8_t buffert[32];
+  HAL_I2C_Mem_Read(&hi2c1, 0xA0, (1<<5), 2, buffert, 32, 1000);
   //Receive config param data when UART interrupt gets triggered
   HAL_UART_Receive_IT(&huart2, config_param_data, 4);
 
