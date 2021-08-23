@@ -64,35 +64,32 @@ static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 uint8_t I2C_Transmit_DefaultParameters(void);
 uint8_t I2C_Transmit_NewParameters(uint8_t bytearray[],uint8_t arraysize,uint8_t start_addr);
+void readByte(uint8_t byteNumber,uint8_t *byteValue);
+void EEPROM_ErasePage1();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 ///////DEFAULT PARAMETER VALUES//////
-float default_config_parameters[MAX_CONFIG_PARAM]={0.4,2,1.5,0.4,1.5};
+uint32_t default_config_parameters[MAX_CONFIG_PARAM]={40,200,150,40,150};
 uint8_t default_cdefault_config_parameters_bytearray[MAX_CONFIG_BYTES];
 /////DATA BUFFERS///////
-uint8_t config_param_data[4];
+uint8_t uart_config_param_data[4];
 uint8_t uart_config_param_buf[100]={'*'};
 
 
 ///////FLAGS//////
 uint8_t uart_param_flag=0;
-uint8_t UART_SX_FLAG=0;
-uint8_t I2C_TX_FLAG=1;
 uint8_t UART_TX_FLAG=0;
+uint8_t READY_TO_WRITE=0;
 
 //Rx Transfer completed callback.
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
-	UART_SX_FLAG=0;
-    I2C_TX_FLAG=1;
-
     //check and be ready to Rx next frame or not
     //already rx one full frame
     if(uart_param_flag==1){
     	//check for frame integrity
-        if(config_param_data[0]=='(' && uart_config_param_buf[config_param_data[1]*4]==')'){
-        	UART_SX_FLAG=1;
+        if(uart_config_param_data[0]=='(' && uart_config_param_buf[uart_config_param_data[1]*4]==')'){
         	UART_TX_FLAG=1;
         	//call UART Transmit
         	HAL_UART_TxCpltCallback(&huart2);
@@ -104,31 +101,26 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
         	HAL_UART_TxCpltCallback(&huart2);
         	UART_TX_FLAG=0;
         }
-        HAL_UART_Receive_IT(&huart2, config_param_data, 4);
+        HAL_UART_Receive_IT(&huart2, uart_config_param_data, 4);
         uart_param_flag=0;
     }
     //Rx Remaining frame
     else{
-      int no_of_param=config_param_data[1];
+      int no_of_param=uart_config_param_data[1];
       HAL_UART_Receive_IT(&huart2,uart_config_param_buf,(no_of_param*4)+1);
-
       uart_param_flag=1;
     }
 }
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
 	//Check for flag if frame is valid
 	if(UART_TX_FLAG==1){
-		//Write New parameters to EEPROM
-		uint8_t writeflag=I2C_Transmit_NewParameters(uart_config_param_buf,config_param_data[1],config_param_data[3]);
-		if(writeflag==1)
-			HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Data Received & written",sizeof("Data Received & written"));
-		else
-			 HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Data Received & Write Failed",sizeof("Data Received & Write Failed"));
-
+			 HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Data Received",sizeof("Data Received"));
+			 READY_TO_WRITE=1;
 	}
 	else if(UART_TX_FLAG==2){
 	HAL_UART_Transmit_IT(&huart2,(uint8_t* )"Invalid Frame",sizeof("Invalid Frame"));
 	}
+	//HAL_Delay(5);
 }
 uint8_t I2C_Transmit_DefaultParameters(void){
   //calculate CRC for float array
@@ -145,7 +137,7 @@ uint8_t I2C_Transmit_DefaultParameters(void){
 	  senddatabuf[i]=default_cdefault_config_parameters_bytearray[i-1];
   }
   for(int i=0;i<2;i++){
- 	  senddatabuf[MAX_CONFIG_BYTES+1]=crcbuf[i];
+ 	  senddatabuf[MAX_CONFIG_BYTES+1+i]=crcbuf[i];
    }
   i2cRetVal=HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<5), 2, senddatabuf,32, 1000);
   HAL_Delay(5);
@@ -158,6 +150,9 @@ uint8_t I2C_Transmit_DefaultParameters(void){
 uint8_t I2C_Transmit_NewParameters(uint8_t bytearray[],uint8_t arraysize,uint8_t start_address){
 	HAL_StatusTypeDef i2cRetVal;
 	uint8_t i2C_new_write=0;
+	if(start_address>1){
+		start_address=(start_address*4)-1;
+	}
 	  i2cRetVal=HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<5)|start_address|1, 2, bytearray, arraysize, 1000);
 	  HAL_Delay(5);
 	  if(i2cRetVal==HAL_OK){
@@ -169,7 +164,7 @@ uint8_t I2C_Transmit_NewParameters(uint8_t bytearray[],uint8_t arraysize,uint8_t
 	  crcInit();
 	  crc new_config_crc=crcFast((uint8_t*)&tempbuf,MAX_CONFIG_BYTES);
 	  //Write updated CRC of data to EEPROM
-	  i2cRetVal=HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<5)|1|MAX_CONFIG_BYTES, 1, (uint8_t*)&new_config_crc,2, 1000);
+	  i2cRetVal=HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<5)|1|MAX_CONFIG_BYTES, 2, (uint8_t*)&new_config_crc,2, 1000);
 	  HAL_Delay(5);
 	  if(i2cRetVal==HAL_OK){
 		  i2C_new_write|=1<<1;
@@ -180,6 +175,17 @@ uint8_t I2C_Transmit_NewParameters(uint8_t bytearray[],uint8_t arraysize,uint8_t
 	  }
 	  else
 	  	  return 0;
+}
+void EEPROM_ErasePage1(){
+	uint8_t data[32];
+	memset(data,0xFF,32);
+	HAL_I2C_Mem_Write(&hi2c1, EEPROM_ADDR, (1<<5),2,data,32, 1000);
+	HAL_Delay(5);
+}
+void readByte(uint8_t byteNumber,uint8_t *byteValue){
+	uint8_t pagenum=(byteNumber/32 +1);
+	uint8_t bytenum=byteNumber%32;
+	HAL_I2C_Mem_Read(&hi2c1, EEPROM_ADDR, (pagenum<<5)|bytenum, 2, byteValue, 1, 1000);
 }
 /* USER CODE END 0 */
 
@@ -197,6 +203,7 @@ int main(void)
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
+  HAL_Delay(5);
 
   /* USER CODE BEGIN Init */
 
@@ -216,28 +223,40 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
-  uint8_t writeflag=0;
 
+  //EEPROM_ErasePage1();
   //Read first memory location to check if default parameters already written
-  HAL_I2C_Mem_Read(&hi2c1, 0xA0, (1<<5), 2, &writeflag, 1, 1000);
+  uint8_t writeflag=0;
+  readByte(0,&writeflag);
   if(writeflag!=0xAA){
 	  //Write Default parameters
 	  uint8_t I2C_Returnflag=I2C_Transmit_DefaultParameters();
 	  if(I2C_Returnflag==1){
-		  HAL_UART_Transmit(&huart2,(uint8_t* )"Write Successful",sizeof("Write Successful"),1000);
+		  HAL_UART_Transmit(&huart2,(uint8_t* )"Default Write Successful",sizeof("Default Write Successful"),1000);
 	  }
-	  else{
-		  HAL_UART_Transmit(&huart2,(uint8_t* )"Write Failed",sizeof("Write Failed"),1000);
+	  else if(I2C_Returnflag==0){
+		  HAL_UART_Transmit(&huart2,(uint8_t* )"Default Write Failed",sizeof("Default Write Failed"),1000);
 	  }
   }
-  uint8_t buffert[32];
-  HAL_I2C_Mem_Read(&hi2c1, 0xA0, (1<<5), 2, buffert, 32, 1000);
+
   //Receive config param data when UART interrupt gets triggered
-  HAL_UART_Receive_IT(&huart2, config_param_data, 4);
+  HAL_UART_Receive_IT(&huart2, uart_config_param_data, 4);
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1){
+	  if(READY_TO_WRITE==1){
+		  uint8_t I2C_Returnflag=I2C_Transmit_NewParameters(uart_config_param_buf,uart_config_param_data[1]*4,uart_config_param_data[3]);
+		  uint8_t buffert[32];
+		    HAL_I2C_Mem_Read(&hi2c1, 0xA0, (1<<5), 2, buffert, 32, 1000);
+		  	  if(I2C_Returnflag==1){
+		  		  HAL_UART_Transmit(&huart2,(uint8_t* )"Change Successful",sizeof("Change Successful"),1000);
+		  	  }
+		  	  else if(I2C_Returnflag==0){
+		  		  HAL_UART_Transmit(&huart2,(uint8_t* )"Change Failed",sizeof("Change Failed"),1000);
+		  	  }
+		  READY_TO_WRITE=0;
+	  }
   }
     /* USER CODE END WHILE */
     /* USER CODE BEGIN 3 */
